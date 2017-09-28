@@ -5,6 +5,7 @@
 
 import numpy as np
 import math
+import time
 
 class cl_world:
     def __init__(self, objects=[], canvases=[], world=[], edges = []):
@@ -12,15 +13,12 @@ class cl_world:
         self.canvases = canvases
         self.world = world
         self.edges = edges
-        # self.display
 
     def add_canvas(self, canvas):
         self.canvases.append(canvas)
         canvas.world = self
 
     def create_translate_matrix(self, matrix):
-        
-        matrix = np.array(matrix, dtype=np.float32)
 
         translateMatrix = np.identity(4)    
         translateMatrix[0][3] = matrix[0]
@@ -30,44 +28,47 @@ class cl_world:
         return translateMatrix
 
     def create_scale_matrix(self, matrix):
-        
-        scaleMatrix = np.array(matrix, dtype=np.float32)
-        scaleMatrix = np.diag(scaleMatrix)
+
+        scaleMatrix = np.diag(matrix)
 
         return scaleMatrix
 
     def create_x_axis_rotation_matrix(self, matrix):
-
-        matrix = np.array(matrix, dtype=np.float32)
         
         xRotateMatrix = np.identity(4)
-        xRotateMatrix[1][1] = matrix[2] / math.hypot(matrix[2], matrix[1])
-        xRotateMatrix[1][2] = -matrix[1] /  math.hypot(matrix[2], matrix[1])
-        xRotateMatrix[2][1] = matrix[1] / math.hypot(matrix[2], matrix[1])
-        xRotateMatrix[2][2] = matrix[2] / math.hypot(matrix[2], matrix[1])
+
+        if math.hypot(matrix[2], matrix[1]) != 0:
+        
+            xRotateMatrix[1][1] = matrix[2] / math.hypot(matrix[2], matrix[1])
+            xRotateMatrix[1][2] = -matrix[1] /  math.hypot(matrix[2], matrix[1])
+            xRotateMatrix[2][1] = matrix[1] / math.hypot(matrix[2], matrix[1])
+            xRotateMatrix[2][2] = matrix[2] / math.hypot(matrix[2], matrix[1])
+            
         return xRotateMatrix
     
     def create_y_axis_rotation_matrix(self, matrix):
         
-        matrix = np.array(matrix, dtype=np.float32)
-        
         yRotateMatrix = np.identity(4)
-        yRotateMatrix[0][0] = matrix[2] / math.hypot(matrix[2], matrix[0])
-        yRotateMatrix[2][0] = -matrix[0] /  math.hypot(matrix[2], matrix[0])
-        yRotateMatrix[0][2] = matrix[0] /  math.hypot(matrix[2], matrix[0])
-        yRotateMatrix[2][2] = matrix[2] / math.hypot(matrix[2], matrix[0])
+        
+        if math.hypot(matrix[2], matrix[0]) != 0:
+            
+            yRotateMatrix[0][0] = matrix[2] / math.hypot(matrix[2], matrix[0])
+            yRotateMatrix[2][0] = -matrix[0] /  math.hypot(matrix[2], matrix[0])
+            yRotateMatrix[0][2] = matrix[0] /  math.hypot(matrix[2], matrix[0])
+            yRotateMatrix[2][2] = matrix[2] / math.hypot(matrix[2], matrix[0])
 
         return yRotateMatrix
 
-    def create_z_axis_rotation_matrix(self, matrix):
+    def create_z_axis_rotation_matrix(self, rotation):
 
-        matrix = np.array(matrix, dtype=np.float32)
-        
+        rotation = math.radians(rotation)
+
         zRotateMatrix = np.identity(4)
-        zRotateMatrix[1][1] = math.cos(rotation) # / math.sqrt((math.pow(matrix[0],2) + math.pow(matrix[1],2)))
-        zRotateMatrix[1][2] = -math.sin(rotation) # / math.sqrt((math.pow(matrix[0],2) + math.pow(matrix[1],2)))
-        zRotateMatrix[2][1] = math.sin(rotation) # / math.sqrt((math.pow(matrix[0],2) + math.pow(matrix[1],2)))
-        zRotateMatrix[2][2] = math.cos(rotation) # / math.sqrt((math.pow(matrix[0],2) + math.pow(matrix[1],2)))
+        
+        zRotateMatrix[0][0] = math.cos(rotation)
+        zRotateMatrix[0][1] = -math.sin(rotation)
+        zRotateMatrix[1][0] = math.sin(rotation)
+        zRotateMatrix[1][1] = math.cos(rotation)
         
         return zRotateMatrix
 
@@ -82,9 +83,13 @@ class cl_world:
         point2 = point2.rstrip("]")
         point2 = point2.split(",")
 
+        point1 = np.array(point1, dtype=np.float32)
+        point2 = np.array(point2, dtype=np.float32)
+
         rotation = float(rotation)
 
-        point1ToOrigin = self.create_translate_matrix(point1)
+        point1Back = self.create_translate_matrix(point1)
+        point1ToOrigin = point1Back
         point1ToOrigin[0][3] = -1 * point1ToOrigin[0][3]
         point1ToOrigin[1][3] = -1 * point1ToOrigin[1][3]
         point1ToOrigin[2][3] = -1 * point1ToOrigin[2][3]
@@ -92,25 +97,41 @@ class cl_world:
         point2ToX = self.create_x_axis_rotation_matrix(point2)
         point2ToZ = self.create_y_axis_rotation_matrix(point2)
 
-        rotationMatrix = self.create_z_axis_rotation_matrix(math.degrees(rotation))
+        xToPoint2 = np.transpose(point2ToX)
+        zToPoint2 = np.transpose(point2ToZ)
 
-        transform = np.dot(rotation, np.dot(point2ToZ, point2ToX))
+        for k in range(100):
 
-        for face in self.objects:
+            rotationMatrix = self.create_z_axis_rotation_matrix(rotation * (1/100))
 
-            if len(canvas.coords(face)) == 4:
-                continue
+            transform = np.dot(point2ToX, point1ToOrigin)
+            transform = np.dot(point2ToZ, transform)
+            transform = np.dot(rotationMatrix, transform)
+            transform = np.dot(zToPoint2, transform)
+            transform = np.dot(xToPoint2, transform)
+            transform = np.dot(point1Back, transform)
+
+            vertices = []
+
+            for i in range(len(self.world[0:-1])):
             
-            pointIter = iter(canvas.coords(face))
-            xAndY = []
-            
-            for points in pointIter:
-                pointToTranslate = [points, next(pointIter), 0, 1]
-                translatePoint = np.dot(transform, pointToTranslate)
-                xAndY.extend((translatePoint[0], translatePoint[1]))
-                                
-            canvas.coords(face, xAndY)
-            xAndY = []
+                self.world[i] = np.dot(transform, self.world[i])
+                vertices.append(np.dot(self.world[-1], self.world[i]))
+
+            edgeIter = iter(self.edges)
+            points = []
+
+            for face in self.objects:
+                if len(canvas.coords(face)) != 4:
+                    for fp in next(edgeIter):
+                        points.append(int(vertices[int(fp)-1][0]))
+                        points.append(int(vertices[int(fp)-1][1]))
+
+                    canvas.coords(face, points)
+                    points = []
+                    
+            canvas.update_idletasks()
+
 
     def scale_button(self, canvas, matrix, point):
 
@@ -124,90 +145,92 @@ class cl_world:
         point = point.split(",")
         point.append(1.0)
 
+        matrix = np.array(matrix, dtype=np.float32)
+        point = np.array(point, dtype=np.float32)
 
-        scaleMatrix = self.create_scale_matrix(matrix)
+        tempMat = np.zeros_like(matrix)
+        tempMat[3] = 1.0
+        
         translateBack = self.create_translate_matrix(point)
         translateThere = translateBack.copy()
         translateThere[0][3] = -1 * translateThere[0][3]
         translateThere[1][3] = -1 * translateThere[1][3]
         translateThere[2][3] = -1 * translateThere[2][3]
 
-        transform = np.dot(translateBack, np.dot(scaleMatrix, translateThere))
+        tempMat[0] = math.pow(matrix[0], 0.01)
+        tempMat[1] = math.pow(matrix[1], 0.01)
+        tempMat[2] = math.pow(matrix[2], 0.01)        
 
-        for face in self.objects:
+        for k in range(1,101):
+            
+            scaleMatrix = self.create_scale_matrix(tempMat)
 
-            if len(canvas.coords(face)) == 4:
-                continue
+            transform = np.dot(translateBack, np.dot(scaleMatrix, translateThere))
             
-            pointIter = iter(canvas.coords(face))
-            xAndY = []
+            vertices = []
+
+            for i in range(len(self.world[0:-1])):
             
-            for points in pointIter:
-                pointToTranslate = [points, next(pointIter), 0, 1]
-                translatePoint = np.dot(transform, pointToTranslate)
-                xAndY.extend((translatePoint[0], translatePoint[1]))
-                                
-            canvas.coords(face, xAndY)
-            xAndY = []
+                self.world[i] = np.dot(transform, self.world[i])
+                vertices.append(np.dot(self.world[-1], self.world[i]))
+
+            edgeIter = iter(self.edges)
+            points = []
+
+            for face in self.objects:
+                if len(canvas.coords(face)) != 4:
+                    for fp in next(edgeIter):
+                        points.append(int(vertices[int(fp)-1][0]))
+                        points.append(int(vertices[int(fp)-1][1]))
+
+                    canvas.coords(face, points)
+                    points = []
+
+            canvas.update_idletasks()
         
     def translate_button(self, canvas, matrix):
-
+        
         matrix = matrix.lstrip("[")
         matrix = matrix.rstrip("]")
         matrix = matrix.split(",")
         matrix.append(1.0)
 
-        translateMatrix = self.create_translate_matrix(matrix)
+        matrix = np.array(matrix, dtype=np.float32)
+        tempMat = np.zeros_like(matrix)
 
-        vertices = []
+        #translate = self.create_translate_matrix(matrix)
 
-        for i in range(len(self.world[0:-1])):
+        
+        tempMat[0] = matrix[0] * (1/100) 
+        tempMat[1] = matrix[1] * (1/100)
+        tempMat[2] = matrix[2] * (1/100)
+        tempMat[3] = 1.0
+
+        for k in range (100):
             
-            self.world[i] = np.dot(translateMatrix, self.world[i])
-            vertices.append(np.dot(self.world[-1], self.world[i]))
+            translateMatrix = self.create_translate_matrix(tempMat)
 
-##        objIter = iter(self.objects)
-##        points = []
+            vertices = []
 
-##        for face in self.edges:
-##            if len(self.objects[objIter]) == 4 :
-##                next(objIter)
-##                
-##            for fp in face:
-##                points.append(int(particles[int(fp)-1][0]))
-##                points.append(int(particles[int(fp)-1][1]))
-##
-##            canvas.coords(next(objIter), points)
-##            points = []
-##
-        edgeIter = iter(self.edges)
-        points = []
+            for i in range(len(self.world[0:-1])):
+            
+                self.world[i] = np.dot(translateMatrix, self.world[i])
+                vertices.append(np.dot(self.world[-1], self.world[i]))
 
-        for face in self.objects:
-            if len(canvas.coords(face)) != 4:
-                for fp in next(edgeIter, self.edges[0]):
-                    points.append(int(vertices[int(fp)-1][0]))
-                    points.append(int(vertices[int(fp)-1][1]))
+            edgeIter = iter(self.edges)
+            points = []
 
-                canvas.coords(face, points)
-                points = []
+            for face in self.objects:
+                if len(canvas.coords(face)) != 4:
+                    for fp in next(edgeIter):
+                        points.append(int(vertices[int(fp)-1][0]))
+                        points.append(int(vertices[int(fp)-1][1]))
 
-##        for face in self.objects:
-##
-##            if len(canvas.coords(face)) == 4:
-##                continue
-##            
-##            pointIter = iter(canvas.coords(face))
-##            xAndY = []
-##            
-##            for points in pointIter:
-##                pointToTranslate = [points, next(pointIter), 0, 1]
-##                translatePoint = np.dot(translateMatrix, pointToTranslate)
-##                xAndY.extend((translatePoint[0], translatePoint[1]))
-##                                
-##            canvas.coords(face, xAndY)
-##            xAndY = []
+                    canvas.coords(face, points)
+                    points = []
 
+            canvas.update_idletasks()
+                    
     def create_graphic_objects(self, canvas, filename):
         file = open(filename, 'r')
         data = file.read()
@@ -270,8 +293,6 @@ class cl_world:
         
             self.objects.append(canvas.create_polygon(points, outline="red", fill="yellow"))
             points = []
-
-        print(len(self.objects))
 
     def redisplay(self, canvas, event, width, height):
         if self.objects:
